@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         scroll.addView(content)
         content.addView(TextView(this).apply { text = "HOST INTELLIGENCE"; textSize = 24f; typeface = Typeface.DEFAULT_BOLD })
         content.addView(TextView(this).apply { text = "DNS • IP • HTTP/S • TLS • CDN • SUBDOMAINS • PORTS"; textSize = 12f; alpha = .7f; setPadding(0, 0, 0, dp(12)) })
-        hostInput = EditText(this).apply { hint = "example.com"; singleLine = true }
+        hostInput = EditText(this).apply { hint = "example.com"; maxLines = 1 }
         content.addView(hostInput, lp())
         subsCheck = CheckBox(this).apply { text = "Discover certificate-listed subdomains"; isChecked = true }
         content.addView(subsCheck)
