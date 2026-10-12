@@ -1,31 +1,29 @@
-# Host Intelligence — Android
+# Host Intelligence for Android
 
-Native Kotlin Android app for authorized domain/host diagnostics.
+Host Intelligence is a native Android hostname and domain reconnaissance utility. The app runs directly on the phone; it does not require a paid backend or embedded API keys. Use it only for domains and systems you own or are explicitly authorized to assess.
 
-## Included
-- DNS A/AAAA/CNAME/NS/MX/TXT via DNS-over-HTTPS
-- Host IP resolution
-- HTTPS status, final URL, response headers for CDN hints
-- TLS certificate subject, issuer, validity and days remaining
-- Certificate Transparency subdomain discovery via crt.sh
-- Parallel subdomain IP/CDN inspection
-- Optional basic TCP port checks (common ports)
-- Last 20 scan reports saved locally
-- Export JSON, CSV and TXT to Downloads (Android 10+)
-- Follows Android system Day/Night theme
+## Current features
+
+- Passive subdomain discovery from Certificate Transparency (`crt.sh`), HackerTarget host search, and AlienVault OTX passive DNS.
+- Bounded recursive Certificate Transparency lookups (up to 8 child-name queries per scan).
+- Source attribution per hostname, source status/error reporting, deduplication, and a 500-name discovery cap.
+- DNS-over-HTTPS record lookups for A, AAAA, CNAME, NS, MX, and TXT, with local resolver IP checks as a secondary signal.
+- HTTP/HTTPS reachability, status code, redirect destination, response headers, timing, TLS certificate details, and heuristic CDN identification.
+- Up to 200 discovered names are verified per scan to limit network load.
+- JSON, CSV, and TXT report export to Downloads on Android 10+. Scan history is stored locally on the device.
 
 ## Build APK using GitHub Actions
-1. Create a GitHub repository and upload all project files.
-2. Commit them to the `main` branch.
-3. Open **Actions** → **Build Host Intelligence APK**.
-4. Choose **Run workflow**.
-5. When the run finishes, download artifact **Host-Intelligence-APK**.
-6. Extract the downloaded ZIP; install `Host-Intelligence-debug.apk` on your phone.
 
-The workflow builds a debug APK for testing. It is not signed as a Play Store release.
+1. Upload/replace the project files in your repository.
+2. Open **Actions** and run **Build Host Intelligence APK** (or push a commit to `main`).
+3. Open the successful workflow run and download the `Host-Intelligence-APK` artifact.
 
-## Notes
-- CDN detection is heuristic; `Unknown` does not prove there is no CDN.
-- crt.sh only reports certificate-transparency names and does not enumerate every subdomain.
-- A port shown as `closed_or_filtered` may be closed or blocked by a firewall/network.
-- Use scanning features only on systems you own or are authorized to test.
+The workflow builds a debug APK with JDK 17 and Android SDK 35.
+
+## Limitations
+
+- Public discovery services are rate-limited, can be unavailable, and do not provide complete coverage. A source error is reported rather than interpreted as proof that no subdomains exist.
+- Recursive lookups are deliberately bounded to keep the app usable and avoid excessive requests. This is not an exhaustive brute-force engine.
+- HTTP status and CDN detection are observations/heuristics, not proof of vulnerability or ownership.
+- Android may restrict background work if the app is closed during a long scan. Keep the app open for the most reliable results.
+- Free public endpoints and DNS-over-HTTPS providers may change behavior without notice.
