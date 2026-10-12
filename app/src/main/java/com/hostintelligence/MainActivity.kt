@@ -5,6 +5,11 @@ import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Typeface
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -49,30 +54,109 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
+        window.statusBarColor = Color.rgb(12, 18, 32)
+        window.navigationBarColor = Color.rgb(12, 18, 32)
+        val bg = Color.rgb(12, 18, 32)
+        val panel = Color.rgb(23, 32, 50)
+        val accent = Color.rgb(91, 156, 255)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setBackgroundColor(bg)
+        }
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(content)
-        content.addView(TextView(this).apply { text = "HOST INTELLIGENCE"; textSize = 24f; typeface = Typeface.DEFAULT_BOLD })
-        content.addView(TextView(this).apply { text = "DNS • IP • HTTP/S • TLS • CDN • SUBDOMAINS • PORTS"; textSize = 12f; alpha = .7f; setPadding(0, 0, 0, dp(12)) })
-        hostInput = EditText(this).apply { hint = "example.com"; setSingleLine(true) }
-        content.addView(hostInput, lp())
-        subsCheck = CheckBox(this).apply { text = "Multi-source subdomains + DNS / HTTP verification"; isChecked = true }
-        content.addView(subsCheck)
-        portsCheck = CheckBox(this).apply { text = "Check common TCP ports (authorized hosts only)" }
-        content.addView(portsCheck)
-        scanButton = Button(this).apply { text = "START SCAN"; setOnClickListener { startScan() } }
-        content.addView(scanButton, lp())
+        content.addView(TextView(this).apply {
+            text = "Host Intelligence"
+            textSize = 27f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(dp(2), dp(4), dp(2), 0)
+        })
+        content.addView(TextView(this).apply {
+            text = "SUBDOMAIN DISCOVERY  ·  DNS  ·  HTTP/S  ·  TLS  ·  CDN"
+            textSize = 11f
+            setTextColor(Color.rgb(151, 169, 197))
+            setPadding(dp(2), dp(4), dp(2), dp(16))
+        })
+        val inputPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(10))
+            background = rounded(panel, dp(16))
+        }
+        hostInput = EditText(this).apply {
+            hint = "Enter domain, e.g. example.com"
+            setSingleLine(true)
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(132, 148, 174))
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
+        }
+        inputPanel.addView(hostInput, lp())
+        subsCheck = CheckBox(this).apply {
+            text = "Multi-source subdomains + DNS / HTTP verification"
+            isChecked = true
+            textSize = 13f
+            setTextColor(Color.rgb(225, 232, 244))
+            buttonTintList = android.content.res.ColorStateList.valueOf(accent)
+        }
+        inputPanel.addView(subsCheck)
+        portsCheck = CheckBox(this).apply {
+            text = "Check common TCP ports (authorized hosts only)"
+            textSize = 13f
+            setTextColor(Color.rgb(225, 232, 244))
+            buttonTintList = android.content.res.ColorStateList.valueOf(accent)
+        }
+        inputPanel.addView(portsCheck)
+        content.addView(inputPanel, lp())
+        scanButton = Button(this).apply {
+            text = "START SCAN"
+            isAllCaps = false
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = rounded(accent, dp(13))
+            setOnClickListener { startScan() }
+        }
+        content.addView(scanButton, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(12); bottomMargin = dp(8) })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        row.addView(Button(this).apply { text = "HISTORY"; setOnClickListener { showHistory() } }, LinearLayout.LayoutParams(0, -2, 1f))
-        exportButton = Button(this).apply { text = "EXPORT"; isEnabled = false; setOnClickListener { showExport() } }
-        row.addView(exportButton, LinearLayout.LayoutParams(0, -2, 1f))
-        content.addView(row)
-        content.addView(TextView(this).apply { text = "Only scan systems you own or are authorized to test. CDN results are heuristic."; textSize = 12f; alpha = .7f; setPadding(0, dp(8), 0, dp(10)) })
-        output = TextView(this).apply { text = "Ready. Enter a hostname to begin."; textSize = 13f; typeface = Typeface.MONOSPACE; setTextIsSelectable(true); setPadding(dp(10), dp(10), dp(10), dp(10)) }
+        val historyButton = Button(this).apply {
+            text = "Scan history"; isAllCaps = false; textSize = 13f
+            setTextColor(Color.rgb(225, 232, 244)); background = rounded(panel, dp(12))
+            setOnClickListener { showHistory() }
+        }
+        row.addView(historyButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) })
+        exportButton = Button(this).apply {
+            text = "Export report"; isAllCaps = false; textSize = 13f; isEnabled = false
+            setTextColor(Color.rgb(225, 232, 244)); background = rounded(panel, dp(12))
+            setOnClickListener { showExport() }
+        }
+        row.addView(exportButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(6) })
+        content.addView(row, lp())
+        content.addView(TextView(this).apply {
+            text = "Only scan systems you own or are authorized to test. CDN detection is heuristic."
+            textSize = 11f; setTextColor(Color.rgb(139, 155, 180))
+            setPadding(dp(2), dp(12), dp(2), dp(8))
+        })
+        output = TextView(this).apply {
+            text = "Ready\nEnter a hostname above to begin."
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.rgb(223, 232, 246))
+            setTextIsSelectable(true)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = rounded(panel, dp(16))
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
         content.addView(output, lp())
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    private fun rounded(color: Int, radius: Int): GradientDrawable = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = radius.toFloat()
     }
 
     private fun startScan() {
@@ -93,12 +177,12 @@ class MainActivity : Activity() {
     private fun scanHost(host: String, includeSubs: Boolean, includePorts: Boolean): JSONObject {
         val result = JSONObject().put("host", host).put("timestamp", now())
         val dns = JSONObject()
-        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
-        result.put("dns", dns).put("ips", JSONArray((doh(host, "A") + doh(host, "AAAA") + resolveIps(host)).distinct().sorted()))
+        listOf("A", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
+        result.put("dns", dns).put("ips", JSONArray((doh(host, "A") + resolveIps(host)).filter(::isIpv4).distinct().sorted()))
         val http = httpCheck(host)
         result.put("http", http).put("tls", tlsCheck(host))
         val providers = detectCdn(dns, http.optJSONObject("headers") ?: JSONObject())
-        result.put("cdn", JSONArray(if (providers.isEmpty()) listOf("Unknown") else providers))
+        result.put("cdn", JSONArray(if (providers.isEmpty()) listOf("No CDN detected") else providers))
         if (includePorts) result.put("ports", checkPorts(host))
 
         val subResults = JSONArray()
@@ -121,8 +205,8 @@ class MainActivity : Activity() {
 
     private fun inspectSubdomain(host: String, sources: JSONArray, depth: Int): JSONObject {
         val dns = JSONObject()
-        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
-        val ips = (dns.optJSONArray("A")?.let(::arrayStrings).orEmpty() + dns.optJSONArray("AAAA")?.let(::arrayStrings).orEmpty() + resolveIps(host)).distinct().sorted()
+        listOf("A", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
+        val ips = (dns.optJSONArray("A")?.let(::arrayStrings).orEmpty() + resolveIps(host)).filter(::isIpv4).distinct().sorted()
         val http = httpCheck(host)
         val providers = detectCdn(dns, http.optJSONObject("headers") ?: JSONObject())
         return JSONObject()
@@ -133,7 +217,7 @@ class MainActivity : Activity() {
             .put("ips", JSONArray(ips))
             .put("resolved", ips.isNotEmpty() || listOf("CNAME", "MX", "NS", "TXT").any { (dns.optJSONArray(it)?.length() ?: 0) > 0 })
             .put("http", http)
-            .put("cdn", JSONArray(if (providers.isEmpty()) listOf("Unknown") else providers))
+            .put("cdn", JSONArray(if (providers.isEmpty()) listOf("No CDN detected") else providers))
     }
 
     private fun arrayStrings(a: JSONArray): List<String> = (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() }
@@ -152,8 +236,13 @@ class MainActivity : Activity() {
     }
 
     private fun resolveIps(host: String): List<String> = try {
-        InetAddress.getAllByName(host).mapNotNull { it.hostAddress }.distinct().sorted()
+        InetAddress.getAllByName(host).filterIsInstance<java.net.Inet4Address>().mapNotNull { it.hostAddress }.distinct().sorted()
     } catch (_: Exception) { emptyList() }
+
+    private fun isIpv4(value: String): Boolean = try {
+        val parts = value.trim().split(".")
+        parts.size == 4 && parts.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }
+    } catch (_: Exception) { false }
 
     private fun httpCheck(host: String): JSONObject {
         val started = System.currentTimeMillis()
@@ -352,11 +441,12 @@ class MainActivity : Activity() {
         return out
     }
 
-    private fun render(r: JSONObject): String = buildString {
+    private fun render(r: JSONObject): CharSequence {
+        val plain = buildString {
         append("HOST INTELLIGENCE\nHost: ${r.optString("host")}\nTime: ${r.optString("timestamp")}\n\n")
-        append("IP ADDRESSES\n${join(r.optJSONArray("ips"))}\n\nDNS RECORDS\n")
+        append("IPV4 ADDRESSES\n${joinIpv4(r.optJSONArray("ips"))}\n\nDNS RECORDS\n")
         val dns = r.optJSONObject("dns") ?: JSONObject()
-        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { append("$it: ${join(dns.optJSONArray(it))}\n") }
+        listOf("A", "CNAME", "NS", "MX", "TXT").forEach { append("$it: ${join(dns.optJSONArray(it))}\n") }
         val http = r.optJSONObject("http") ?: JSONObject()
         append("\nHTTP / HTTPS\nStatus: ${http.optString("status", "-")}\nURL: ${http.optString("finalUrl", "-")}\nTime: ${http.optString("elapsedMs", "-")} ms\n")
         if (http.has("error")) append("Error: ${http.optString("error")}\n")
@@ -383,12 +473,30 @@ class MainActivity : Activity() {
             for (i in 0 until subs.length()) {
                 val s = subs.optJSONObject(i) ?: continue
                 val h = s.optJSONObject("http") ?: JSONObject()
-                append("${s.optString("host")}\n  DNS: ${if (s.optBoolean("resolved")) "resolved" else "no records found"} | IP: ${join(s.optJSONArray("ips"), "No IP")}\n")
+                append("${s.optString("host")}\n  DNS: ${if (s.optBoolean("resolved")) "resolved" else "no records found"} | IPv4: ${joinIpv4(s.optJSONArray("ips"), "No IPv4") }\n")
                 append("  HTTP: ${h.optString("status", h.optString("error", "not checked"))} | CDN: ${join(s.optJSONArray("cdn"), "Unknown")}\n")
                 append("  Sources: ${join(s.optJSONArray("sources"))}\n")
             }
         }
         if (r.has("error")) append("\nERROR: ${r.optString("error")}\n")
+    }
+        val styled = SpannableStringBuilder(plain)
+        val lines = plain.split("\n")
+        var offset = 0
+        for (line in lines) {
+            val lower = line.lowercase(Locale.ROOT)
+            val color = when {
+                lower.contains("cloudflare") -> Color.rgb(74, 222, 128)
+                lower.contains("cloudfront") -> Color.rgb(96, 165, 250)
+                lower.contains("no cdn detected") -> Color.rgb(248, 113, 113)
+                lower.contains("akamai") || lower.contains("fastly") || lower.contains("azure cdn") || lower.contains("bunny cdn") || lower.contains("imperva") || lower.contains("vercel") || lower.contains("netlify") -> Color.rgb(196, 181, 253)
+                line.startsWith("HOST INTELLIGENCE") || line.startsWith("IPV4 ADDRESSES") || line.startsWith("DNS RECORDS") || line.startsWith("HTTP / HTTPS") || line.startsWith("TLS CERTIFICATE") || line.startsWith("PASSIVE DISCOVERY SOURCES") || line.startsWith("VERIFIED SUBDOMAINS") || line.startsWith("COMMON TCP PORTS") -> Color.rgb(147, 197, 253)
+                else -> null
+            }
+            if (color != null && line.isNotEmpty()) styled.setSpan(ForegroundColorSpan(color), offset, offset + line.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            offset += line.length + 1
+        }
+        return styled
     }
 
     private fun saveHistory(result: JSONObject) {
@@ -418,9 +526,9 @@ class MainActivity : Activity() {
 
     private fun toCsv(r: JSONObject): String {
         val rows = mutableListOf(listOf("section", "name", "value"), listOf("host", "host", r.optString("host")), listOf("scan", "timestamp", r.optString("timestamp")))
-        val ips = r.optJSONArray("ips"); if (ips != null) for (i in 0 until ips.length()) rows.add(listOf("ip", "address", ips.optString(i)))
+        val ips = r.optJSONArray("ips"); if (ips != null) for (i in 0 until ips.length()) if (isIpv4(ips.optString(i))) rows.add(listOf("ip", "address", ips.optString(i)))
         val dns = r.optJSONObject("dns") ?: JSONObject()
-        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { type ->
+        listOf("A", "CNAME", "NS", "MX", "TXT").forEach { type ->
             val records = dns.optJSONArray(type) ?: JSONArray()
             for (i in 0 until records.length()) rows.add(listOf("dns", type, records.optString(i)))
         }
@@ -428,7 +536,7 @@ class MainActivity : Activity() {
             val s = subs.optJSONObject(i) ?: continue
             rows.add(listOf("subdomain", s.optString("host"), "IPs: ${join(s.optJSONArray("ips"))}; HTTP: ${(s.optJSONObject("http") ?: JSONObject()).optString("status", "-")}; sources: ${join(s.optJSONArray("sources"))}; CDN: ${join(s.optJSONArray("cdn"))}"))
             val sdns = s.optJSONObject("dns") ?: JSONObject()
-            listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { type ->
+            listOf("A", "CNAME", "NS", "MX", "TXT").forEach { type ->
                 val records = sdns.optJSONArray(type) ?: JSONArray()
                 for (i in 0 until records.length()) rows.add(listOf("subdomain_dns", "${s.optString("host")} $type", records.optString(i)))
             }
@@ -463,6 +571,10 @@ class MainActivity : Activity() {
     private fun normalizeHost(input: String): String = input.trim().lowercase(Locale.ROOT).removePrefix("https://").removePrefix("http://").substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':').trimEnd('.')
     private fun validHost(host: String): Boolean = host.length in 1..253 && host.contains('.') && host.split('.').all { label -> label.length in 1..63 && label.first().isLetterOrDigit() && label.last().isLetterOrDigit() && label.all { it.isLetterOrDigit() || it == '-' } }
     private fun join(a: JSONArray?, empty: String = "-"): String = if (a == null || a.length() == 0) empty else (0 until a.length()).joinToString(", ") { a.optString(it) }
+    private fun joinIpv4(a: JSONArray?, empty: String = "-"): String {
+        val values = if (a == null) emptyList() else (0 until a.length()).map { a.optString(it) }.filter(::isIpv4)
+        return if (values.isEmpty()) empty else values.joinToString(", ")
+    }
     private fun now() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun lp() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
