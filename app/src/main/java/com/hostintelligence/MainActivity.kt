@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         scroll.addView(content)
         content.addView(TextView(this).apply { text = "HOST INTELLIGENCE"; textSize = 24f; typeface = Typeface.DEFAULT_BOLD })
         content.addView(TextView(this).apply { text = "DNS • IP • HTTP/S • TLS • CDN • SUBDOMAINS • PORTS"; textSize = 12f; alpha = .7f; setPadding(0, 0, 0, dp(12)) })
-        hostInput = EditText(this).apply { hint = "example.com"; maxLines = 1 }
+        hostInput = EditText(this).apply { hint = "example.com"; singleLine = true }
         content.addView(hostInput, lp())
         subsCheck = CheckBox(this).apply { text = "Discover certificate-listed subdomains"; isChecked = true }
         content.addView(subsCheck)
@@ -102,7 +102,12 @@ class MainActivity : Activity() {
         if (includePorts) result.put("ports", checkPorts(host))
         val subResults = JSONArray()
         if (includeSubs) {
-            val names = discoverSubdomains(host)
+            val names = try {
+                discoverSubdomains(host)
+            } catch (e: Exception) {
+                result.put("subdomainDiscoveryError", e.message ?: "Unknown discovery error")
+                emptyList()
+            }
             val futures = names.map { name -> executor.submit<JSONObject> { inspectSubdomain(name) } }
             futures.forEach { future -> runCatching { subResults.put(future.get()) } }
         }
@@ -185,20 +190,57 @@ class MainActivity : Activity() {
     }
 
     private fun discoverSubdomains(domain: String): List<String> {
-        val url = URL("https://crt.sh/?q=%25.${java.net.URLEncoder.encode(domain, "UTF-8")}&output=json")
-        val conn = (url.openConnection() as HttpURLConnection).apply { connectTimeout = 8000; readTimeout = 12000; setRequestProperty("User-Agent", "HostIntelligence/1.0") }
-        return try {
-            val body = BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
-            val rows = JSONArray(body); val names = sortedSetOf<String>()
+        val encodedDomain = java.net.URLEncoder.encode(domain, "UTF-8")
+        val url = URL("https://crt.sh/?q=%25.$encodedDomain&output=json")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 30000
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "HostIntelligence/1.0")
+            setRequestProperty("Accept", "application/json")
+        }
+
+        try {
+            val status = conn.responseCode
+            if (status !in 200..299) {
+                throw java.io.IOException("crt.sh returned HTTP $status")
+            }
+
+            val body = BufferedReader(
+                InputStreamReader(conn.inputStream, Charsets.UTF_8)
+            ).use { it.readText() }
+            val rows = JSONArray(body)
+            val names = sortedSetOf<String>()
+
             for (i in 0 until rows.length()) {
                 val raw = rows.optJSONObject(i)?.optString("name_value") ?: continue
-                raw.split("\n").forEach { line ->
-                    val name = line.trim().lowercase(Locale.ROOT).removePrefix("*.").trimEnd('.')
-                    if (name == domain || name.endsWith(".$domain")) names.add(name)
+                raw.split("\n", "\r").forEach { entry ->
+                    val name = entry.trim()
+                        .lowercase(Locale.ROOT)
+                        .removePrefix("*.")
+                        .trimEnd('.')
+
+                    if (name == domain || name.endsWith(".$domain")) {
+                        names.add(name)
+                    }
                 }
             }
-            names.toList()
-        } catch (_: Exception) { emptyList() } finally { conn.disconnect() }
+
+            android.util.Log.i(
+                "HostIntelligence",
+                "crt.sh returned ${names.size} unique names for $domain"
+            )
+            return names.toList()
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "HostIntelligence",
+                "Subdomain discovery failed for $domain",
+                e
+            )
+            throw e
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun checkPorts(host: String): JSONArray {
@@ -225,7 +267,16 @@ class MainActivity : Activity() {
         val ports = r.optJSONArray("ports")
         if (ports != null) { append("\nCOMMON TCP PORTS\n"); for (i in 0 until ports.length()) { val p = ports.optJSONObject(i) ?: continue; append("${p.optInt("port")}: ${p.optString("state")}\n") } }
         val subs = r.optJSONArray("subdomains")
-        if (subs != null) { append("\nSUBDOMAINS (${subs.length()})\n"); for (i in 0 until subs.length()) { val s = subs.optJSONObject(i) ?: continue; append("${s.optString("host").padEnd(35)} | IP: ${join(s.optJSONArray("ips"), "No IP")} | CDN: ${join(s.optJSONArray("cdn"), "Unknown")}\n") } }
+        if (subs != null) {
+            append("\nSUBDOMAINS (${subs.length()})\n")
+            if (r.has("subdomainDiscoveryError")) {
+                append("Discovery error: ${r.optString("subdomainDiscoveryError")}\n")
+            }
+            for (i in 0 until subs.length()) {
+                val sub = subs.optJSONObject(i) ?: continue
+                append("${sub.optString("host").padEnd(35)} | IP: ${join(sub.optJSONArray("ips"), "No IP")} | CDN: ${join(sub.optJSONArray("cdn"), "Unknown")}\n")
+            }
+        }
         if (r.has("error")) append("\nERROR: ${r.optString("error")}\n")
     }
 
