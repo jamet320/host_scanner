@@ -57,7 +57,7 @@ class MainActivity : Activity() {
         content.addView(TextView(this).apply { text = "DNS • IP • HTTP/S • TLS • CDN • SUBDOMAINS • PORTS"; textSize = 12f; alpha = .7f; setPadding(0, 0, 0, dp(12)) })
         hostInput = EditText(this).apply { hint = "example.com"; setSingleLine(true) }
         content.addView(hostInput, lp())
-        subsCheck = CheckBox(this).apply { text = "Discover certificate-listed subdomains"; isChecked = true }
+        subsCheck = CheckBox(this).apply { text = "Multi-source subdomains + DNS / HTTP verification"; isChecked = true }
         content.addView(subsCheck)
         portsCheck = CheckBox(this).apply { text = "Check common TCP ports (authorized hosts only)" }
         content.addView(portsCheck)
@@ -94,30 +94,49 @@ class MainActivity : Activity() {
         val result = JSONObject().put("host", host).put("timestamp", now())
         val dns = JSONObject()
         listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
-        result.put("dns", dns).put("ips", JSONArray(resolveIps(host)))
+        result.put("dns", dns).put("ips", JSONArray((doh(host, "A") + doh(host, "AAAA") + resolveIps(host)).distinct().sorted()))
         val http = httpCheck(host)
         result.put("http", http).put("tls", tlsCheck(host))
         val providers = detectCdn(dns, http.optJSONObject("headers") ?: JSONObject())
         result.put("cdn", JSONArray(if (providers.isEmpty()) listOf("Unknown") else providers))
         if (includePorts) result.put("ports", checkPorts(host))
+
         val subResults = JSONArray()
         if (includeSubs) {
-            val names = discoverSubdomains(host)
-            val futures = names.map { name -> executor.submit<JSONObject> { inspectSubdomain(name) } }
+            val discovery = discoverSubdomains(host)
+            result.put("discovery", discovery)
+            val findings = discovery.optJSONArray("hosts") ?: JSONArray()
+            val count = minOf(findings.length(), 200)
+            val futures = (0 until count).mapNotNull { i ->
+                val finding = findings.optJSONObject(i) ?: return@mapNotNull null
+                val name = finding.optString("host").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                executor.submit(java.util.concurrent.Callable<JSONObject> { inspectSubdomain(name, finding.optJSONArray("sources") ?: JSONArray(), finding.optInt("depth", 1)) })
+            }
             futures.forEach { future -> runCatching { subResults.put(future.get()) } }
+            if (findings.length() > count) discovery.put("verificationLimitedTo", count)
         }
         result.put("subdomains", subResults)
         return result
     }
 
-    private fun inspectSubdomain(host: String): JSONObject {
+    private fun inspectSubdomain(host: String, sources: JSONArray, depth: Int): JSONObject {
         val dns = JSONObject()
-        listOf("A", "AAAA", "CNAME", "NS").forEach { dns.put(it, JSONArray(doh(host, it))) }
-        val ips = resolveIps(host)
+        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { dns.put(it, JSONArray(doh(host, it))) }
+        val ips = (dns.optJSONArray("A")?.let(::arrayStrings).orEmpty() + dns.optJSONArray("AAAA")?.let(::arrayStrings).orEmpty() + resolveIps(host)).distinct().sorted()
         val http = httpCheck(host)
         val providers = detectCdn(dns, http.optJSONObject("headers") ?: JSONObject())
-        return JSONObject().put("host", host).put("ips", JSONArray(ips)).put("cdn", JSONArray(if (providers.isEmpty()) listOf("Unknown") else providers))
+        return JSONObject()
+            .put("host", host)
+            .put("depth", depth)
+            .put("sources", sources)
+            .put("dns", dns)
+            .put("ips", JSONArray(ips))
+            .put("resolved", ips.isNotEmpty() || listOf("CNAME", "MX", "NS", "TXT").any { (dns.optJSONArray(it)?.length() ?: 0) > 0 })
+            .put("http", http)
+            .put("cdn", JSONArray(if (providers.isEmpty()) listOf("Unknown") else providers))
     }
+
+    private fun arrayStrings(a: JSONArray): List<String> = (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() }
 
     private fun doh(host: String, type: String): List<String> {
         val encoded = java.net.URLEncoder.encode(host, "UTF-8")
@@ -137,18 +156,38 @@ class MainActivity : Activity() {
     } catch (_: Exception) { emptyList() }
 
     private fun httpCheck(host: String): JSONObject {
-        val result = JSONObject(); val headers = JSONObject(); var conn: HttpURLConnection? = null
-        val start = System.currentTimeMillis()
-        try {
-            conn = (URL("https://$host").openConnection() as HttpsURLConnection).apply {
-                connectTimeout = 4000; readTimeout = 4000; instanceFollowRedirects = true; setRequestProperty("User-Agent", "HostIntelligence/1.0")
+        val started = System.currentTimeMillis()
+        var lastError = "No HTTP response"
+        for (scheme in listOf("https", "http")) {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = (URL("$scheme://$host").openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 4500
+                    readTimeout = 4500
+                    instanceFollowRedirects = true
+                    requestMethod = "GET"
+                    setRequestProperty("User-Agent", "HostIntelligence/2.0 (authorized asset inventory)")
+                }
+                val status = conn.responseCode
+                val headers = JSONObject()
+                conn.headerFields.forEach { (key, values) ->
+                    if (key != null && !values.isNullOrEmpty()) headers.put(key, values.joinToString(", "))
+                }
+                runCatching { (if (status < 400) conn.inputStream else conn.errorStream)?.use { it.read(ByteArray(1024)) } }
+                return JSONObject()
+                    .put("reachable", true)
+                    .put("scheme", scheme)
+                    .put("status", status)
+                    .put("finalUrl", conn.url.toString())
+                    .put("elapsedMs", System.currentTimeMillis() - started)
+                    .put("headers", headers)
+            } catch (e: Exception) {
+                lastError = e.message ?: e.javaClass.simpleName
+            } finally {
+                conn?.disconnect()
             }
-            conn.connect(); result.put("status", conn.responseCode).put("finalUrl", conn.url.toString())
-            conn.headerFields.forEach { (key, values) -> if (key != null && !values.isNullOrEmpty()) headers.put(key, values.joinToString(", ")) }
-            runCatching { (if (conn.responseCode < 400) conn.inputStream else conn.errorStream)?.use { it.read(ByteArray(512)) } }
-        } catch (e: Exception) { result.put("error", e.message ?: e.javaClass.simpleName) }
-        finally { result.put("elapsedMs", System.currentTimeMillis() - start).put("headers", headers); conn?.disconnect() }
-        return result
+        }
+        return JSONObject().put("reachable", false).put("error", lastError).put("elapsedMs", System.currentTimeMillis() - started).put("headers", JSONObject())
     }
 
     private fun tlsCheck(host: String): JSONObject {
@@ -184,21 +223,123 @@ class MainActivity : Activity() {
         return signatures.filterValues { terms -> terms.any { term -> text.contains(term) } }.keys.toList()
     }
 
-    private fun discoverSubdomains(domain: String): List<String> {
-        val url = URL("https://crt.sh/?q=%25.${java.net.URLEncoder.encode(domain, "UTF-8")}&output=json")
-        val conn = (url.openConnection() as HttpURLConnection).apply { connectTimeout = 8000; readTimeout = 12000; setRequestProperty("User-Agent", "HostIntelligence/1.0") }
-        return try {
-            val body = BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
-            val rows = JSONArray(body); val names = sortedSetOf<String>()
-            for (i in 0 until rows.length()) {
-                val raw = rows.optJSONObject(i)?.optString("name_value") ?: continue
-                raw.split("\n").forEach { line ->
-                    val name = line.trim().lowercase(Locale.ROOT).removePrefix("*.").trimEnd('.')
-                    if (name == domain || name.endsWith(".$domain")) names.add(name)
+    private fun discoverSubdomains(domain: String): JSONObject {
+        data class Finding(val host: String, val sources: MutableSet<String>, var depth: Int = 1)
+        val findings = linkedMapOf<String, Finding>()
+        val sourceStatus = JSONArray()
+        val sourceCounts = linkedMapOf<String, Int>()
+
+        fun add(raw: String, source: String, depth: Int = 1) {
+            val name = raw.trim().lowercase(Locale.ROOT).removePrefix("*.").trimEnd('.').trim()
+            if (name.isBlank() || name == domain || !name.endsWith(".$domain")) return
+            if (!validHost(name) || name.length > 253) return
+            val finding = findings.getOrPut(name) { Finding(name, linkedSetOf(), depth) }
+            finding.sources.add(source)
+            finding.depth = minOf(finding.depth, depth)
+        }
+
+        fun recordSource(name: String, count: Int, error: String? = null) {
+            sourceCounts[name] = count
+            val item = JSONObject().put("name", name).put("count", count).put("status", if (error == null) "ok" else "error")
+            if (error != null) item.put("error", error.take(220))
+            sourceStatus.put(item)
+        }
+
+        // Certificate Transparency (free, no API key).
+        run {
+            val before = findings.size
+            try {
+                val query = java.net.URLEncoder.encode("%.$domain", "UTF-8")
+                val body = fetchText("https://crt.sh/?q=$query&output=json", 8000, 14000)
+                val rows = JSONArray(body)
+                for (i in 0 until rows.length()) {
+                    val raw = rows.optJSONObject(i)?.optString("name_value") ?: continue
+                    raw.split('\n').forEach { add(it, "crt.sh") }
                 }
-            }
-            names.toList()
-        } catch (_: Exception) { emptyList() } finally { conn.disconnect() }
+                recordSource("crt.sh", findings.size - before)
+            } catch (e: Exception) { recordSource("crt.sh", 0, e.message ?: e.javaClass.simpleName) }
+        }
+
+        // HackerTarget's public host-search endpoint. It is rate-limited and may be unavailable.
+        run {
+            val before = findings.size
+            try {
+                val body = fetchText("https://api.hackertarget.com/hostsearch/?q=$domain", 7000, 10000)
+                if (body.contains("error ", ignoreCase = true) || body.contains("API count exceeded", ignoreCase = true)) throw IllegalStateException(body.trim().take(180))
+                body.lineSequence().forEach { line -> add(line.substringBefore(',').trim(), "HackerTarget") }
+                recordSource("HackerTarget", findings.size - before)
+            } catch (e: Exception) { recordSource("HackerTarget", 0, e.message ?: e.javaClass.simpleName) }
+        }
+
+        // AlienVault OTX public passive-DNS data. No token is embedded in the app.
+        run {
+            val before = findings.size
+            try {
+                val body = fetchText("https://otx.alienvault.com/api/v1/indicators/domain/$domain/passive_dns", 7000, 10000)
+                val root = JSONObject(body)
+                val rows = root.optJSONArray("passive_dns") ?: JSONArray()
+                for (i in 0 until rows.length()) {
+                    val row = rows.optJSONObject(i) ?: continue
+                    add(row.optString("hostname"), "AlienVault OTX")
+                    add(row.optString("address"), "AlienVault OTX") // IPs are rejected by the domain-suffix validator.
+                }
+                recordSource("AlienVault OTX", findings.size - before)
+            } catch (e: Exception) { recordSource("AlienVault OTX", 0, e.message ?: e.javaClass.simpleName) }
+        }
+
+        // Bounded recursive CT lookups: explore a small set of discovered branch names only.
+        var recursiveQueries = 0
+        val seedNames = findings.keys
+            .filter { it.removeSuffix(".$domain").count { ch -> ch == '.' } <= 1 }
+            .sorted()
+            .take(8)
+        var recursiveAdded = 0
+        for (seed in seedNames) {
+            if (findings.size >= 500) break
+            try {
+                val query = java.net.URLEncoder.encode("%.$seed", "UTF-8")
+                val body = fetchText("https://crt.sh/?q=$query&output=json", 5000, 8000)
+                val rows = JSONArray(body)
+                val before = findings.size
+                for (i in 0 until rows.length()) {
+                    val raw = rows.optJSONObject(i)?.optString("name_value") ?: continue
+                    raw.split('\n').forEach { add(it, "crt.sh recursive", 2) }
+                }
+                recursiveAdded += findings.size - before
+                recursiveQueries++
+            } catch (_: Exception) { /* Root source status remains visible; recursive failures are summarized below. */ }
+        }
+        sourceStatus.put(JSONObject().put("name", "crt.sh recursive").put("count", recursiveAdded).put("status", if (recursiveQueries > 0) "ok" else "skipped").put("queries", recursiveQueries).put("maxQueries", 8))
+
+        val hosts = JSONArray()
+        findings.values.sortedBy { it.host }.take(500).forEach { f ->
+            hosts.put(JSONObject().put("host", f.host).put("sources", JSONArray(f.sources.sorted())).put("depth", f.depth))
+        }
+        return JSONObject()
+            .put("domain", domain)
+            .put("hosts", hosts)
+            .put("sourceStatus", sourceStatus)
+            .put("sourceCounts", JSONObject().apply { sourceCounts.forEach { (k, v) -> put(k, v) } })
+            .put("totalUnique", hosts.length())
+            .put("recursiveQueries", recursiveQueries)
+            .put("limit", 500)
+    }
+
+    private fun fetchText(address: String, connectMs: Int, readMs: Int): String {
+        val conn = (URL(address).openConnection() as HttpURLConnection).apply {
+            connectTimeout = connectMs
+            readTimeout = readMs
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "HostIntelligence/2.0")
+            setRequestProperty("Accept", "application/json, text/plain, */*")
+        }
+        try {
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException("HTTP $code${if (body.isNotBlank()) ": ${body.take(120)}" else ""}")
+            return body
+        } finally { conn.disconnect() }
     }
 
     private fun checkPorts(host: String): JSONArray {
@@ -224,8 +365,29 @@ class MainActivity : Activity() {
         listOf("subject", "issuer", "validFrom", "validUntil", "daysRemaining", "error").forEach { if (tls.has(it)) append("$it: ${tls.optString(it)}\n") }
         val ports = r.optJSONArray("ports")
         if (ports != null) { append("\nCOMMON TCP PORTS\n"); for (i in 0 until ports.length()) { val p = ports.optJSONObject(i) ?: continue; append("${p.optInt("port")}: ${p.optString("state")}\n") } }
+        val discovery = r.optJSONObject("discovery")
+        if (discovery != null) {
+            append("\nPASSIVE DISCOVERY SOURCES\n")
+            val statuses = discovery.optJSONArray("sourceStatus") ?: JSONArray()
+            for (i in 0 until statuses.length()) {
+                val src = statuses.optJSONObject(i) ?: continue
+                append("${src.optString("name")}: ${src.optString("status")} | new: ${src.optInt("count")}")
+                if (src.has("error")) append(" | ${src.optString("error")}")
+                append("\n")
+            }
+            append("Unique names: ${discovery.optInt("totalUnique")} | recursive queries: ${discovery.optInt("recursiveQueries")}\n")
+        }
         val subs = r.optJSONArray("subdomains")
-        if (subs != null) { append("\nSUBDOMAINS (${subs.length()})\n"); for (i in 0 until subs.length()) { val s = subs.optJSONObject(i) ?: continue; append("${s.optString("host").padEnd(35)} | IP: ${join(s.optJSONArray("ips"), "No IP")} | CDN: ${join(s.optJSONArray("cdn"), "Unknown")}\n") } }
+        if (subs != null) {
+            append("\nVERIFIED SUBDOMAINS (${subs.length()})\n")
+            for (i in 0 until subs.length()) {
+                val s = subs.optJSONObject(i) ?: continue
+                val h = s.optJSONObject("http") ?: JSONObject()
+                append("${s.optString("host")}\n  DNS: ${if (s.optBoolean("resolved")) "resolved" else "no records found"} | IP: ${join(s.optJSONArray("ips"), "No IP")}\n")
+                append("  HTTP: ${h.optString("status", h.optString("error", "not checked"))} | CDN: ${join(s.optJSONArray("cdn"), "Unknown")}\n")
+                append("  Sources: ${join(s.optJSONArray("sources"))}\n")
+            }
+        }
         if (r.has("error")) append("\nERROR: ${r.optString("error")}\n")
     }
 
@@ -257,7 +419,25 @@ class MainActivity : Activity() {
     private fun toCsv(r: JSONObject): String {
         val rows = mutableListOf(listOf("section", "name", "value"), listOf("host", "host", r.optString("host")), listOf("scan", "timestamp", r.optString("timestamp")))
         val ips = r.optJSONArray("ips"); if (ips != null) for (i in 0 until ips.length()) rows.add(listOf("ip", "address", ips.optString(i)))
-        val subs = r.optJSONArray("subdomains"); if (subs != null) for (i in 0 until subs.length()) { val s = subs.optJSONObject(i) ?: continue; rows.add(listOf("subdomain", s.optString("host"), "IP: ${join(s.optJSONArray("ips"))} | CDN: ${join(s.optJSONArray("cdn"))}")) }
+        val dns = r.optJSONObject("dns") ?: JSONObject()
+        listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { type ->
+            val records = dns.optJSONArray(type) ?: JSONArray()
+            for (i in 0 until records.length()) rows.add(listOf("dns", type, records.optString(i)))
+        }
+        val subs = r.optJSONArray("subdomains"); if (subs != null) for (i in 0 until subs.length()) {
+            val s = subs.optJSONObject(i) ?: continue
+            rows.add(listOf("subdomain", s.optString("host"), "IPs: ${join(s.optJSONArray("ips"))}; HTTP: ${(s.optJSONObject("http") ?: JSONObject()).optString("status", "-")}; sources: ${join(s.optJSONArray("sources"))}; CDN: ${join(s.optJSONArray("cdn"))}"))
+            val sdns = s.optJSONObject("dns") ?: JSONObject()
+            listOf("A", "AAAA", "CNAME", "NS", "MX", "TXT").forEach { type ->
+                val records = sdns.optJSONArray(type) ?: JSONArray()
+                for (i in 0 until records.length()) rows.add(listOf("subdomain_dns", "${s.optString("host")} $type", records.optString(i)))
+            }
+        }
+        val discovery = r.optJSONObject("discovery")?.optJSONArray("sourceStatus")
+        if (discovery != null) for (i in 0 until discovery.length()) {
+            val source = discovery.optJSONObject(i) ?: continue
+            rows.add(listOf("source", source.optString("name"), "status=${source.optString("status")}; count=${source.optInt("count")}; error=${source.optString("error", "")}"))
+        }
         return rows.joinToString("\n") { row -> row.joinToString(",") { "\"${it.replace("\"", "\"\"")}\"" } }
     }
 
