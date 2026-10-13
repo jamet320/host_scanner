@@ -3,7 +3,8 @@ name: Build Host Intelligence APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - "app/**"
       - "*.gradle.kts"
@@ -15,33 +16,72 @@ permissions:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Install SDK packages
+
+      - name: Accept Android SDK licenses
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: Install Gradle 8.9
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Install Android SDK packages
         run: |
-          curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.9
+        run: |
+          curl -fL \
+            https://services.gradle.org/distributions/gradle-8.9-bin.zip \
+            -o "$RUNNER_TEMP/gradle.zip"
+
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Verify build environment
+        run: |
+          java -version
+          gradle --version
+          sdkmanager --list_installed
+
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
-      - name: Stage APK
+        run: |
+          gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -s "$APK" ]; then
+            echo "::error::APK was not generated."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+      - name: Prepare APK artifact
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/Host-Intelligence-debug.apk
-      - name: Upload APK artifact
+          cp \
+            app/build/outputs/apk/debug/app-debug.apk \
+            artifacts/Host-Intelligence-debug.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Host-Intelligence-APK
