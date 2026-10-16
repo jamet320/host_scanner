@@ -94,6 +94,17 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
             backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
         }
+        val tunnelCenterButton = Button(this).apply {
+            text = "Open Tunnel Center  →"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(36, 92, 164), dp(13))
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, TunnelActivity::class.java)) }
+        }
+        content.addView(tunnelCenterButton, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(4); bottomMargin = dp(10)
+        })
         inputPanel.addView(hostInput, lp())
         subsCheck = CheckBox(this).apply {
             text = "Multi-source subdomains + DNS / HTTP verification"
