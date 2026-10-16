@@ -1,29 +1,27 @@
-# Host Intelligence for Android
+# Host Intelligence V2 — first integration milestone
 
-Host Intelligence is a native Android hostname and domain reconnaissance utility. The app runs directly on the phone; it does not require a paid backend or embedded API keys. Use it only for domains and systems you own or are explicitly authorized to assess.
+This package extends the existing Kotlin Android Host Intelligence project rather than replacing the host finder.
 
-## Current features
+## Included
+- Preserves the existing multi-source subdomain discovery, DNS/HTTP/TLS checks, IPv4-only results, port checks, history, and export.
+- Adds a Tunnel Center screen.
+- Saves SSH, HTTP, VLESS, VMess, Trojan, and Shadowsocks profiles locally.
+- Imports common URI-form share links for VLESS, VMess, Trojan, Shadowsocks, and SSH. Some legacy base64-only Shadowsocks links may need manual entry.
+- Imports raw Xray JSON configuration.
+- Supports manual profile creation/editing, selecting, deleting, and local persistence.
 
-- Passive subdomain discovery from Certificate Transparency (`crt.sh`), HackerTarget host search, and AlienVault OTX passive DNS.
-- Bounded recursive Certificate Transparency lookups (up to 8 child-name queries per scan).
-- Source attribution per hostname, source status/error reporting, deduplication, and a 500-name discovery cap.
-- DNS-over-HTTPS record lookups for A, AAAA, CNAME, NS, MX, and TXT, with local resolver IP checks as a secondary signal.
-- HTTP/HTTPS reachability, status code, redirect destination, response headers, timing, TLS certificate details, and heuristic CDN identification.
-- Up to 200 discovered names are verified per scan to limit network load.
-- JSON, CSV, and TXT report export to Downloads on Android 10+. Scan history is stored locally on the device.
+## Important status
+This is the profile-management milestone, **not yet a working VPN client**. A full-device VPN requires an actual packet-forwarding engine wired to Android `VpnService`. Xray-core integration and SSH-to-TUN forwarding are the next engine milestones. The app deliberately does not show a fake connected state or route traffic into a dead VPN.
 
-## Build APK using GitHub Actions
+## Apply
+1. Back up the current repository.
+2. Extract this ZIP into the repository root, allowing files to replace matching paths.
+3. Commit/push to `main` or run the existing `Build Host Intelligence APK` workflow manually.
+4. Download the `Host-Intelligence-APK` artifact from the completed Actions run.
 
-1. Upload/replace the project files in your repository.
-2. Open **Actions** and run **Build Host Intelligence APK** (or push a commit to `main`).
-3. Open the successful workflow run and download the `Host-Intelligence-APK` artifact.
+## Notes
+- Profile credentials are stored in app-private SharedPreferences; they are not an encrypted vault.
+- Only scan domains and services you own or are authorized to test.
+- Android API 35 and Java 17 settings are unchanged.
 
-The workflow builds a debug APK with JDK 17 and Android SDK 35.
-
-## Limitations
-
-- Public discovery services are rate-limited, can be unavailable, and do not provide complete coverage. A source error is reported rather than interpreted as proof that no subdomains exist.
-- Recursive lookups are deliberately bounded to keep the app usable and avoid excessive requests. This is not an exhaustive brute-force engine.
-- HTTP status and CDN detection are observations/heuristics, not proof of vulnerability or ownership.
-- Android may restrict background work if the app is closed during a long scan. Keep the app open for the most reliable results.
-- Free public endpoints and DNS-over-HTTPS providers may change behavior without notice.
+See `V2-ROADMAP.md` for the staged engine plan.
