@@ -530,7 +530,11 @@ class MainActivity : Activity() {
         val formats = arrayOf("JSON", "CSV", "TXT")
         AlertDialog.Builder(this).setTitle("Export report").setItems(formats) { _, which ->
             val format = formats[which].lowercase(Locale.ROOT)
-            val data = when (format) { "json" -> result.toString(2); "csv" -> toCsv(result); else -> render(result) }
+            val data = when (format) {
+    "json" -> result.toString(2)
+    "csv" -> toCsv(result)
+    else -> render(result).toString()
+}
             saveExport(data, format)
         }.show()
     }
