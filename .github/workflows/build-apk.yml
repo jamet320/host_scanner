@@ -1,61 +1,43 @@
-name: Build Host Intelligence APK
-
+name: Build Tunnel APK
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths:
-      - "app/**"
-      - "*.gradle.kts"
-      - "gradle.properties"
-      - ".github/workflows/build-apk.yml"
-
+    paths: [ "app/**", "*.gradle.kts", "gradle.properties", ".github/workflows/build-apk.yml" ]
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-          packages: platform-tools
-
-      - name: Install SDK packages
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Install Gradle 8.9
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Gradle
         run: |
           curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp
           echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
-
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
-
-      - name: Stage APK
+      - name: Download official libXray Android release
         run: |
-          mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/Host-Intelligence-debug.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+          mkdir -p app/libs /tmp/libxray
+          curl -fL https://github.com/XTLS/libXray/releases/download/v26.10.10/libxray-android.zip -o /tmp/libxray/release.zip
+          unzip -q /tmp/libxray/release.zip -d /tmp/libxray/unpacked
+          AAR="$(find /tmp/libxray/unpacked -type f -iname '*.aar' | head -n 1)"
+          if [ -z "$AAR" ]; then echo "No AAR found in official archive; inspect archive layout before integrating."; find /tmp/libxray/unpacked -maxdepth 4 -type f | head -100; exit 1; fi
+          cp "$AAR" app/libs/libxray.aar
+      - name: Add AAR dependency
+        run: echo 'dependencies { implementation(files("libs/libxray.aar")) }' >> app/build.gradle.kts
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
         with:
-          name: Host-Intelligence-APK
-          path: artifacts/Host-Intelligence-debug.apk
+          name: Host-Intelligence-Tunnel-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
