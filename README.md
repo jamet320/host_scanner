@@ -1,27 +1,11 @@
-# Host Intelligence V2 — first integration milestone
+# Host Intelligence Tunnel
 
-This package extends the existing Kotlin Android Host Intelligence project rather than replacing the host finder.
+Android source project for a lightweight V2Ray/Xray VPN client, with SSH profile UI planned as a separate tunnel mode. It includes VPN consent, Android `VpnService` TUN setup, raw Xray JSON input, and VLESS URI conversion for common TCP/WS/gRPC + TLS/Reality configurations.
 
-## Included
-- Preserves the existing multi-source subdomain discovery, DNS/HTTP/TLS checks, IPv4-only results, port checks, history, and export.
-- Adds a Tunnel Center screen.
-- Saves SSH, HTTP, VLESS, VMess, Trojan, and Shadowsocks profiles locally.
-- Imports common URI-form share links for VLESS, VMess, Trojan, Shadowsocks, and SSH. Some legacy base64-only Shadowsocks links may need manual entry.
-- Imports raw Xray JSON configuration.
-- Supports manual profile creation/editing, selecting, deleting, and local persistence.
+## Build APK
+1. Upload the folder contents to a GitHub repository on branch `main`.
+2. Open **Actions → Build Tunnel APK → Run workflow**.
+3. Download artifact **Host-Intelligence-Tunnel-APK**.
 
 ## Important status
-This is the profile-management milestone, **not yet a working VPN client**. A full-device VPN requires an actual packet-forwarding engine wired to Android `VpnService`. Xray-core integration and SSH-to-TUN forwarding are the next engine milestones. The app deliberately does not show a fake connected state or route traffic into a dead VPN.
-
-## Apply
-1. Back up the current repository.
-2. Extract this ZIP into the repository root, allowing files to replace matching paths.
-3. Commit/push to `main` or run the existing `Build Host Intelligence APK` workflow manually.
-4. Download the `Host-Intelligence-APK` artifact from the completed Actions run.
-
-## Notes
-- Profile credentials are stored in app-private SharedPreferences; they are not an encrypted vault.
-- Only scan domains and services you own or are authorized to test.
-- Android API 35 and Java 17 settings are unchanged.
-
-See `V2-ROADMAP.md` for the staged engine plan.
+This is a development scaffold, **not a verified working VPN release**. The GitHub workflow fetches the official libXray Android release and checks whether it contains an AAR. Upstream release packaging / Java binding names can change; inspect build output if integration fails. The VPN service does not claim success when engine startup fails. A real device test with a valid profile is required. SSH profile handling / SSH full-device tunneling is not implemented in this milestone; the app is intentionally honest about that limitation.
